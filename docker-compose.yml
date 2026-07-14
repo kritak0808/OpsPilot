@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  # ─── Infrastructure ─────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: opspilot-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: opspilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d opspilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: opspilot-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Backend API ─────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    container_name: opspilot-backend
+    environment:
+      - ENV=production
+      - PROJECT_NAME=OpsPilot AI
+      - API_VERSION=v1
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/opspilot
+      - REDIS_URL=redis://redis:6379/0
+      - OTEL_SERVICE_NAME=opspilot-backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+      - AI_ORCHESTRATOR_URL=http://ai-orchestrator:8001
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ─── Celery Worker ────────────────────────────────────────────
+  celery-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/backend.Dockerfile
+    container_name: opspilot-celery-worker
+    command: ["poetry", "run", "celery", "-A", "src.workers.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+    environment:
+      - ENV=production
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/opspilot
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["NONE"]
+
+  # ─── AI Orchestrator ──────────────────────────────────────────
+  ai-orchestrator:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/ai.Dockerfile
+    container_name: opspilot-ai
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8001:8001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ─── Frontend ─────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/frontend.Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+        - NEXT_PUBLIC_AI_URL=http://localhost:8001
+    container_name: opspilot-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_AI_URL=http://localhost:8001
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

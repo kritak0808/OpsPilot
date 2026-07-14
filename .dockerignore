@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+.github
+apps/frontend/node_modules
+apps/frontend/.next
+apps/backend/.venv
+apps/backend/node_modules
+apps/ai-orchestrator/.venv
+apps/ai-orchestrator/node_modules

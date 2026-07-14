@@ -1,0 +1,31 @@
+# Node.js
+node_modules/
+dist/
+.next/
+out/
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.poetry/
+poetry.lock
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Environments & Secrets
+.env
+.env.local
+.env.production
+*.pem
+*.key
+kubeconfig*
+
+# OS Files
+.DS_Store
+Thumbs.db
